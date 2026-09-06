@@ -56,6 +56,8 @@ MONGODB_DB=trakloop
 # Generate with: node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 JWT_SECRET=<your-random-32-byte-secret>
 SESSION_SECRET=<your-random-32-byte-secret>
+APP_URL=http://localhost:3000
+SMS_PROVIDER=console
 ```
 
 ### Installation & Running
@@ -81,6 +83,11 @@ pnpm dev
 
 - `POST /api/auth/register` - Create account with validated name, email, and strong password
 - `POST /api/auth/login` - Authenticate with credentials and receive HttpOnly session cookie
+- `POST /api/auth/register-phone` - Send OTP for phone registration
+- `POST /api/auth/verify-phone-otp` - Verify OTP and create the phone account
+- `POST /api/auth/login-phone` - Send OTP for phone login
+- `POST /api/auth/verify-login` - Verify OTP and phone login code
+- `POST /api/auth/regenerate-code` - Regenerate a login code after OTP confirmation
 - `POST /api/auth/logout` - Invalidate session in database and clear session cookie
 - `GET  /api/auth/me` - Retrieve authenticated user profile (`id`, `name`, `email`)
 - `POST /api/activity-log` - Log activity (Protected via middleware & session)
@@ -92,6 +99,8 @@ pnpm dev
 pnpm build
 pnpm start
 ```
+
+For Netlify, configure the production variables listed in [AUTHENTICATION_SETUP.md](AUTHENTICATION_SETUP.md), especially `APP_URL=https://trackloop.netlify.app`, then redeploy the site. The deployed build must include the origin-validation changes in `proxy.ts` and `lib/auth.ts`.
 
 ## License
 

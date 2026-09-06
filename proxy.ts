@@ -30,6 +30,37 @@ function extractToken(request: NextRequest): string | null {
   return null;
 }
 
+function hasTrustedOrigin(request: NextRequest): boolean {
+  const origin = request.headers.get('origin');
+  if (!origin) return true;
+
+  try {
+    const originUrl = new URL(origin);
+    const forwardedHost = request.headers.get('x-forwarded-host');
+    const requestHost = forwardedHost?.split(',')[0]?.trim()
+      ?? request.headers.get('host')
+      ?? request.nextUrl.host;
+    const forwardedProto = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim();
+    const requestProtocol = forwardedProto || request.nextUrl.protocol.replace(':', '');
+    const configuredOrigin = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL;
+
+    const trustedOrigins = new Set([
+      `${requestProtocol}://${requestHost}`,
+      request.nextUrl.origin,
+      ...(configuredOrigin ? [new URL(configuredOrigin).origin] : []),
+    ]);
+
+    if (process.env.NODE_ENV !== 'production') {
+      trustedOrigins.add(`http://localhost:${request.nextUrl.port || '3000'}`);
+      trustedOrigins.add(`http://127.0.0.1:${request.nextUrl.port || '3000'}`);
+    }
+
+    return trustedOrigins.has(originUrl.origin);
+  } catch {
+    return false;
+  }
+}
+
 async function verifyTokenSignature(token: string, secret: string): Promise<{ valid: boolean; tokenId?: string }> {
   if (!token || !token.includes('.')) return { valid: false };
   const parts = token.split('.');
@@ -65,8 +96,7 @@ export async function proxy(request: NextRequest) {
 
   // CSRF Origin verification for state-modifying requests to API
   if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(request.method) && pathname.startsWith('/api/')) {
-    const origin = request.headers.get('origin');
-    if (origin && origin !== request.nextUrl.origin) {
+    if (!hasTrustedOrigin(request)) {
       return NextResponse.json(
         { error: 'Cross-site request forgery protection: untrusted origin' },
         { status: 403 }
