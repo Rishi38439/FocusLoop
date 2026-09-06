@@ -19,6 +19,11 @@ yarn-error.log*
 
 /PROJECT_DOCUMENTATION.txt
 
+# Local secrets (commit only the documented template)
+.env
+.env.*
+!.env.example
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

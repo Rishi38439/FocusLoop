@@ -43,7 +43,7 @@ export function Layout({
   activities,
   onQuickAdd 
 }: LayoutProps) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
 
@@ -96,7 +96,7 @@ export function Layout({
                 </div>
                 {sidebarOpen && (
                   <div>
-                    <h1 className="text-xl font-bold text-white">TrackDaily</h1>
+                    <h1 className="text-xl font-bold text-white">trakloop</h1>
                     <p className="text-xs text-white/50">Track Your Momentum</p>
                   </div>
                 )}
@@ -140,9 +140,12 @@ export function Layout({
             {sidebarOpen && (
               <div className="p-4 border-t border-white/5">
                 <div className="bg-gradient-to-r from-white/5 to-white/10 rounded-xl p-4 border border-white/10">
-                  <p className="text-xs text-white/50 mb-1">Session</p>
+                  <p className="text-xs text-white/50 mb-1">Account</p>
                   {isAuthenticated ? (
-                    <p className="text-sm font-mono text-white/80">{sessionCode}</p>
+                    <>
+                      <p className="truncate text-sm text-white/80">{user?.email ?? sessionCode}</p>
+                      <button onClick={() => void logout()} className="mt-2 text-xs text-blue-300 hover:text-blue-200">Sign out</button>
+                    </>
                   ) : (
                     <button
                       onClick={() => onViewChange('settings')}

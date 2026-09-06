@@ -49,7 +49,7 @@ export const getChartData = (activities: Activity[], days: number = 7): ChartDat
 export const exportActivitiesToJson = (activities: Activity[]): string => {
   return JSON.stringify(
     {
-      app: 'TrackDaily',
+      app: 'trakloop',
       version: 2,
       exportedAt: new Date().toISOString(),
       strategy: 'replace',

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createOtpChallenge, normalizeLoginMobileNumber, validateMobileNumber } from '@/lib/authSecurity';
+import { createAndDeliverOtpChallenge, normalizeLoginMobileNumber, validateMobileNumber } from '@/lib/authSecurity';
 
 export async function POST(request: NextRequest) {
   const ipAddress = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? request.headers.get('x-real-ip') ?? 'unknown';
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
 
     switch (action) {
       case 'send': {
-        const challenge = await createOtpChallenge(normalizedMobileNumber, ipAddress);
+        const challenge = await createAndDeliverOtpChallenge(normalizedMobileNumber, ipAddress);
 
         if (!challenge.success) {
           return NextResponse.json(
@@ -25,10 +25,6 @@ export async function POST(request: NextRequest) {
             { status: 429 },
           );
         }
-
-        // In a real app, integrate an SMS gateway here (Twilio, MSG91, etc.).
-        // For development we log it to the server console.
-        console.log(`[OTP] Sent code ${challenge.otp} to ${normalizedMobileNumber}`);
 
         const payload: Record<string, unknown> = {
           success: true,

@@ -1,65 +1,80 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useGuestSession } from '@/hooks/useGuestSession';
+import { useEffect, useState } from 'react';
 import { Dashboard } from '@/components/Dashboard';
-import LiveGridPulseNetwork from '@/components/LiveGridPulseNetwork';
 import InfrastructureIntro from '@/components/InfrastructureIntro';
+import LiveGridPulseNetwork from '@/components/LiveGridPulseNetwork';
+import { LoginForm } from '@/components/auth/LoginForm';
+import { RegisterForm } from '@/components/auth/RegisterForm';
 import { useActivityTracker } from '@/hooks/useActivityTracker';
+import { useAuth } from '@/hooks/useAuth';
 
 export function AuthWrapper() {
-  const [showIntro, setShowIntro] = useState(true); // Always start with intro on server-side
+  const [showIntro, setShowIntro] = useState(true);
+  const [showRegistration, setShowRegistration] = useState(false);
+  const { isAuthenticated, isLoading, refreshSession } = useAuth();
+  const tracker = useActivityTracker();
 
   useEffect(() => {
-    // Check if intro has already been played in this browser session
-    const hasSeenIntro = sessionStorage.getItem('trackdaily_intro_seen');
-    if (hasSeenIntro) {
+    if (sessionStorage.getItem('trakloop_intro_seen') || sessionStorage.getItem('trackdaily_intro_seen')) {
       setShowIntro(false);
     }
   }, []);
 
-  const handleIntroComplete = () => {
-    // Mark intro as seen for this browser session
-    sessionStorage.setItem('trackdaily_intro_seen', 'true');
-    // Delay hiding intro to allow smooth fade out
-    setTimeout(() => setShowIntro(false), 1500);
-  };
-  useGuestSession();
-  const {
-    activities,
-    sessionId,
-    sessionCode,
-    addActivity,
-    deleteActivity,
-    updateActivity,
-    replaceActivities,
-  } = useActivityTracker();
-
-  // Show intro animation first
   if (showIntro) {
     return (
-      <div suppressHydrationWarning>
-        <InfrastructureIntro onComplete={handleIntroComplete} />
+      <InfrastructureIntro
+        onComplete={() => {
+          sessionStorage.setItem('trakloop_intro_seen', 'true');
+          setTimeout(() => {
+            setShowIntro(false);
+          }, 1500);
+        }}
+      />
+    );
+  }
+
+  if (isLoading) {
+    return <div className="min-h-screen bg-background" />;
+  }
+
+  if (isAuthenticated) {
+    return (
+      <div className="min-h-screen relative bg-background text-foreground">
+        <LiveGridPulseNetwork />
+        <Dashboard
+          activities={tracker.activities}
+          sessionId={tracker.sessionId}
+          sessionCode={tracker.sessionCode}
+          onAddActivity={tracker.addActivity}
+          onDeleteActivity={tracker.deleteActivity}
+          onUpdateActivity={tracker.updateActivity}
+          onReplaceActivities={tracker.replaceActivities}
+        />
       </div>
     );
   }
 
-  // Show main app with guest session
   return (
-    <div className="min-h-screen relative bg-background text-foreground">
-      {/* Live Grid Pulse Network */}
+    <main className="relative flex min-h-screen items-center justify-center bg-background p-4">
       <LiveGridPulseNetwork />
-      
-      {/* Dashboard Content */}
-      <Dashboard
-        activities={activities}
-        sessionId={sessionId}
-        sessionCode={sessionCode}
-        onAddActivity={addActivity}
-        onDeleteActivity={deleteActivity}
-        onUpdateActivity={updateActivity}
-        onReplaceActivities={replaceActivities}
-      />
-    </div>
+      <div className="relative z-10 w-full max-w-md">
+        {showRegistration ? (
+          <RegisterForm
+            onRegisterSuccess={() => {
+              void refreshSession();
+              setShowRegistration(false);
+            }}
+            onBackClick={() => setShowRegistration(false)}
+          />
+        ) : (
+          <LoginForm
+            onLoginSuccess={() => void refreshSession()}
+            onRegisterClick={() => setShowRegistration(true)}
+          />
+        )}
+      </div>
+    </main>
   );
 }
+

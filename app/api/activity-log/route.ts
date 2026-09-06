@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { logActivity } from '@/lib/activityLogger';
+import { hasTrustedOrigin, requireAuthenticatedUser } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
+  if (!hasTrustedOrigin(request)) return NextResponse.json({ error: 'Invalid request origin' }, { status: 403 });
   try {
-    const { activityName, log_code, activity_time } = await request.json();
-    if (!activityName || !log_code || typeof activity_time !== 'number') {
-      console.error('[activity-log] Missing required fields', { activityName, log_code, activity_time });
+    const user = await requireAuthenticatedUser(request);
+    if (user instanceof NextResponse) return user;
+    const { activityName, activity_time } = await request.json();
+    if (typeof activityName !== 'string' || activityName.trim().length < 1 || activityName.length > 100 || typeof activity_time !== 'number' || !Number.isFinite(activity_time) || activity_time < 0 || activity_time > 1440) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
-    const result = await logActivity({ activityName, log_code, activity_time });
-    console.log(`[activity-log] Collection: ${activityName}, log_code: ${log_code}, result:`, result);
+    const result = await logActivity({ activityName: activityName.trim(), userId: user.id, activity_time });
     return NextResponse.json({ success: true, result });
   } catch (error) {
     console.error('[activity-log] ERROR:', error);

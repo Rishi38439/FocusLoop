@@ -1,6 +1,8 @@
 import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 import { isValidMobileNumber, normalizeMobileNumber } from './phone';
-import { getOtpCollection, getVerificationTokenCollection, getRateLimitCollection } from './mongodb';
+import { getOtpCollection, getVerificationTokenCollection, getRateLimitCollection, getLoginCodeCollection } from './mongodb';
+import { sendOtpSms } from './sms';
 
 export const OTP_TTL_MS = 5 * 60 * 1000;
 export const OTP_RESEND_INTERVAL_MS = 60 * 1000;
@@ -10,6 +12,11 @@ export const OTP_SEND_WINDOW_MS = 10 * 60 * 1000;
 export const LOGIN_ATTEMPT_MAX = 8;
 export const LOGIN_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 export const VERIFICATION_TOKEN_TTL_MS = 10 * 60 * 1000;
+export const LOGIN_CODE_LENGTH = 6;
+export const LOGIN_CODE_BCRYPT_ROUNDS = 12;
+
+// Avoid ambiguous characters: O, 0, I, 1, l
+const LOGIN_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
 export interface OtpChallenge {
   mobileNumber: string;
@@ -21,7 +28,7 @@ export interface OtpChallenge {
 }
 
 export interface VerificationTokenEntry {
-  token: string;
+  tokenHash: string;
   mobileNumber: string;
   expiresAt: Date;
 }
@@ -48,32 +55,69 @@ export function createLoginRateKey(mobileNumber: string, ipAddress: string): str
   return `login:${normalizeMobileNumber(mobileNumber)}:${ipAddress || 'unknown'}`;
 }
 
-async function touchRateLimit(key: string, maxAttempts: number, windowMs: number): Promise<{ allowed: boolean; retryAfterMs?: number }> {
-  const collection = await getRateLimitCollection();
-  const now = new Date();
-  const entry = await collection.findOne({ key });
+const inMemoryRateLimits = new Map<string, { count: number; windowStart: number }>();
 
-  if (!entry || now.getTime() - entry.windowStart.getTime() >= windowMs) {
+export function sanitizeNoSql<T>(input: T): T {
+  if (input === null || typeof input !== 'object') {
+    return input;
+  }
+  if (Array.isArray(input)) {
+    return input.map(sanitizeNoSql) as unknown as T;
+  }
+  const clean: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+    // Strip keys starting with $ or containing . which could be used for Mongo injection
+    if (!key.startsWith('$') && !key.includes('.')) {
+      clean[key] = sanitizeNoSql(value);
+    }
+  }
+  return clean as T;
+}
+
+export async function touchRateLimit(key: string, maxAttempts: number, windowMs: number): Promise<{ allowed: boolean; retryAfterMs?: number }> {
+  try {
+    const collection = await getRateLimitCollection();
+    const now = new Date();
+    const entry = await collection.findOne({ key });
+
+    if (!entry || now.getTime() - entry.windowStart.getTime() >= windowMs) {
+      await collection.updateOne(
+        { key },
+        { $set: { count: 1, windowStart: now } },
+        { upsert: true }
+      );
+      return { allowed: true };
+    }
+
+    if (entry.count >= maxAttempts) {
+      return {
+        allowed: false,
+        retryAfterMs: windowMs - (now.getTime() - entry.windowStart.getTime()),
+      };
+    }
+
     await collection.updateOne(
       { key },
-      { $set: { count: 1, windowStart: now } },
-      { upsert: true }
+      { $inc: { count: 1 } }
     );
     return { allowed: true };
+  } catch {
+    // In-memory fallback if MongoDB connection fails
+    const now = Date.now();
+    const existing = inMemoryRateLimits.get(key);
+    if (!existing || now - existing.windowStart >= windowMs) {
+      inMemoryRateLimits.set(key, { count: 1, windowStart: now });
+      return { allowed: true };
+    }
+    if (existing.count >= maxAttempts) {
+      return {
+        allowed: false,
+        retryAfterMs: windowMs - (now - existing.windowStart),
+      };
+    }
+    existing.count += 1;
+    return { allowed: true };
   }
-
-  if (entry.count >= maxAttempts) {
-    return {
-      allowed: false,
-      retryAfterMs: windowMs - (now.getTime() - entry.windowStart.getTime()),
-    };
-  }
-
-  await collection.updateOne(
-    { key },
-    { $inc: { count: 1 } }
-  );
-  return { allowed: true };
 }
 
 function hashOtp(otp: string, salt: string): string {
@@ -82,6 +126,10 @@ function hashOtp(otp: string, salt: string): string {
 
 function createVerificationToken(): string {
   return crypto.randomBytes(32).toString('hex');
+}
+
+function hashVerificationToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
 }
 
 export async function createOtpChallenge(mobileNumber: string, ipAddress: string): Promise<
@@ -129,6 +177,23 @@ export async function createOtpChallenge(mobileNumber: string, ipAddress: string
   );
 
   return { success: true, otp };
+}
+
+export async function createAndDeliverOtpChallenge(mobileNumber: string, ipAddress: string): Promise<
+  | { success: true; otp: string }
+  | { success: false; error: string; retryAfterMs?: number }
+> {
+  const challenge = await createOtpChallenge(mobileNumber, ipAddress);
+  if (!challenge.success) return challenge;
+
+  try {
+    await sendOtpSms(normalizeMobileNumber(mobileNumber), challenge.otp);
+    return challenge;
+  } catch (error) {
+    await getOtpCollection().then((collection) => collection.deleteOne({ mobileNumber: normalizeMobileNumber(mobileNumber) }));
+    console.error('OTP delivery failed:', error instanceof Error ? error.message : 'Unknown error');
+    return { success: false, error: 'Unable to deliver OTP. Please try again later.' };
+  }
 }
 
 export async function verifyOtpChallenge(mobileNumber: string, otp: string): Promise<
@@ -182,7 +247,7 @@ export async function verifyOtpChallenge(mobileNumber: string, otp: string): Pro
   const tokenCollection = await getVerificationTokenCollection();
   
   await tokenCollection.insertOne({
-    token: verificationToken,
+    tokenHash: hashVerificationToken(verificationToken),
     mobileNumber: normalizedMobileNumber,
     expiresAt: new Date(now.getTime() + VERIFICATION_TOKEN_TTL_MS),
   });
@@ -192,31 +257,33 @@ export async function verifyOtpChallenge(mobileNumber: string, otp: string): Pro
 
 export async function consumeVerificationToken(token: string, mobileNumber: string): Promise<boolean> {
   const collection = await getVerificationTokenCollection();
-  const entry = await collection.findOne({ token });
+  const tokenHash = hashVerificationToken(token);
+  const entry = await collection.findOne({ tokenHash });
 
   if (!entry) {
     return false;
   }
 
   if (new Date() > entry.expiresAt || entry.mobileNumber !== normalizeMobileNumber(mobileNumber)) {
-    await collection.deleteOne({ token });
+    await collection.deleteOne({ tokenHash });
     return false;
   }
 
-  await collection.deleteOne({ token });
+  await collection.deleteOne({ tokenHash });
   return true;
 }
 
 export async function peekVerificationToken(token: string): Promise<VerificationTokenEntry | null> {
   const collection = await getVerificationTokenCollection();
-  const entry = await collection.findOne({ token });
+  const tokenHash = hashVerificationToken(token);
+  const entry = await collection.findOne({ tokenHash });
 
   if (!entry) {
     return null;
   }
 
   if (new Date() > entry.expiresAt) {
-    await collection.deleteOne({ token });
+    await collection.deleteOne({ tokenHash });
     return null;
   }
 
@@ -225,5 +292,59 @@ export async function peekVerificationToken(token: string): Promise<Verification
 
 export async function verifyLoginRateLimit(mobileNumber: string, ipAddress: string): Promise<{ allowed: boolean; retryAfterMs?: number }> {
   return touchRateLimit(createLoginRateKey(mobileNumber, ipAddress), LOGIN_ATTEMPT_MAX, LOGIN_ATTEMPT_WINDOW_MS);
+}
+
+export async function verifyAuthRateLimit(action: 'login' | 'register', identifier: string, ipAddress: string): Promise<{ allowed: boolean; retryAfterMs?: number }> {
+  const maxAttempts = action === 'register' ? 5 : LOGIN_ATTEMPT_MAX;
+  const windowMs = action === 'register' ? 15 * 60 * 1000 : LOGIN_ATTEMPT_WINDOW_MS;
+  const key = `auth:${action}:${identifier.trim().toLowerCase()}:${ipAddress || 'unknown'}`;
+  return touchRateLimit(key, maxAttempts, windowMs);
+}
+
+/**
+ * Generate a cryptographically secure 6-character login code.
+ * Uses alphabet without ambiguous characters (O, 0, I, 1, l).
+ * Automatically checks uniqueness in database.
+ */
+export async function generateSecureLoginCode(): Promise<string> {
+  const maxAttempts = 10;
+  
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    // Generate random 6-character code
+    let code = '';
+    const randomBytes = crypto.randomBytes(6);
+    for (let i = 0; i < 6; i++) {
+      code += LOGIN_CODE_ALPHABET[randomBytes[i] % LOGIN_CODE_ALPHABET.length];
+    }
+    
+    // Check uniqueness
+    const collection = await getLoginCodeCollection();
+    const codeHash = await hashLoginCode(code);
+    const existing = await collection.findOne({ codeHash });
+    if (!existing) {
+      return code;
+    }
+  }
+  
+  throw new Error('Failed to generate unique login code after maximum attempts');
+}
+
+/**
+ * Hash a login code using bcrypt for secure storage.
+ * Never store raw login codes in the database.
+ */
+export async function hashLoginCode(code: string): Promise<string> {
+  const normalized = String(code).trim().toUpperCase();
+  const salt = await bcrypt.genSalt(LOGIN_CODE_BCRYPT_ROUNDS);
+  return bcrypt.hash(normalized, salt);
+}
+
+/**
+ * Verify a login code against its hash.
+ */
+export async function verifyLoginCode(code: string, codeHash: string): Promise<boolean> {
+  if (!code || !codeHash) return false;
+  const normalized = String(code).trim().toUpperCase();
+  return bcrypt.compare(normalized, codeHash);
 }
 

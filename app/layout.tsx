@@ -7,8 +7,8 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'TrackDaily',
-  description: 'Track, analyze, and improve your daily activities with comprehensive logging and analytics',
+  title: 'trakloop - Track Your Momentum',
+  description: 'Secure, modern activity tracking and momentum application with comprehensive logging and analytics',
   generator: 'v0.app',
   icons: {
     icon: [

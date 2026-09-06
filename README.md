@@ -1,149 +1,98 @@
-# TrackDaily
+# trakloop
 
-A modern activity tracking application that helps you monitor, analyze, and improve your daily activities. Built with Next.js and featuring real-time analytics, session management, and a beautiful dark-themed interface.
+A modern activity and momentum tracking full-stack application built with Next.js, featuring real-time analytics, production-grade authentication with secure password storage, session management, and a beautiful dark-themed interface.
 
 ## Features
 
+### Authentication & Security
+- **Secure Password Hashing**: Passwords are never stored in plain text. Hashed on the backend using `bcryptjs` (12 rounds) with unique cryptographic salts.
+- **Cryptographic Session Security**: Session tokens are cryptographically signed with HMAC-SHA256 and verified via Next.js authentication middleware.
+- **Database Hardening**: MongoDB stores only the SHA-256 hash of session tokens with automatic TTL expiration and revocation support. Sensitive fields (`passwordHash`, `jwtSecret`) are never exposed.
+- **Brute-Force & Rate Limiting**: Intelligent rate limiting for register and login endpoints with exponential backoff and `Retry-After` headers.
+- **NoSQL Injection & CSRF Protection**: Strict Zod schema validation, origin verification, and HttpOnly/SameSite secure cookies.
+
 ### Activity Tracking
-- **Comprehensive Logging**: Track activities with names, durations, timestamps, and optional notes
-- **Session-Based Tracking**: Unique session management with guest access and authentication
-- **Real-time Updates**: Instant activity logging and immediate reflection in analytics
+- **Comprehensive Logging**: Track activities with names, durations, timestamps, and optional notes.
+- **User-Isolated Storage**: Each user's data is fully isolated to their authenticated account.
+- **Real-time Analytics**: Instant activity logging and immediate reflection in visual charts.
 
 ### Analytics & Visualization
-- **Interactive Charts**: Dynamic visualizations showing activity trends and patterns over time
-- **Statistical Insights**: Comprehensive metrics including total activities, duration averages, and frequency analysis
-- **Time-based Analysis**: View activities by weekly, monthly, or yearly time ranges
-
-### User Experience
-- **Dark Theme Interface**: Modern dark mode design with smooth animations and transitions
-- **Responsive Design**: Optimized for desktop, tablet, and mobile devices
-- **Intuitive Navigation**: Clean, organized interface with multiple view options
-
-### Data Management
-- **Activity History**: Complete log of all tracked activities with timestamps
-- **Data Management**: Import and export your activity data from Settings
-- **Session Persistence**: Maintains your data across browser sessions
-- **Flexible Updates**: Edit and modify existing activities with ease
+- **Interactive Charts**: Dynamic visualizations showing activity trends and patterns over time.
+- **Statistical Insights**: Comprehensive metrics including total activities, duration averages, and frequency analysis.
+- **Time-based Analysis**: View activities by weekly, monthly, or yearly time ranges.
 
 ## Technology Stack
 
-- **Framework**: Next.js 16 with App Router for modern React development
+- **Framework**: Next.js 16 (App Router)
+- **Database**: MongoDB with official driver
+- **Authentication**: bcryptjs, crypto HMAC signatures, HttpOnly cookies, Next.js Middleware
+- **Validation**: Zod schema validation
 - **UI Library**: shadcn/ui components built on Radix UI primitives
-- **Styling**: Tailwind CSS v4 for responsive, utility-first styling
-- **Charts**: Recharts for interactive data visualizations
-- **Icons**: Lucide React for consistent, modern iconography
-- **Animations**: Framer Motion for smooth transitions and micro-interactions
-- **Forms**: React Hook Form with Zod validation
-- **State Management**: React Hooks and Context API
-- **Type Safety**: TypeScript for enhanced development experience
-- **Package Manager**: pnpm for efficient dependency management
+- **Styling**: Tailwind CSS v4
+- **Charts**: Recharts
+- **Icons**: Lucide React
+- **Animations**: Framer Motion
+- **Package Manager**: pnpm
 
 ## Getting Started
 
 ### Prerequisites
 
 - Node.js 18+ and pnpm package manager
-- Modern web browser with JavaScript enabled
+- MongoDB instance (local or MongoDB Atlas)
 
-### Installation
+### Environment Setup
 
-1. Clone the repository:
+1. Copy the example environment file:
 ```bash
-git clone <repository-url>
-cd TrackDaily
+cp .env.example .env.local
 ```
 
-2. Install dependencies:
+2. Configure environment variables in `.env.local`:
+```env
+MONGODB_URI=mongodb://127.0.0.1:27017
+MONGODB_DB=trakloop
+
+# Generate with: node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+JWT_SECRET=<your-random-32-byte-secret>
+SESSION_SECRET=<your-random-32-byte-secret>
+```
+
+### Installation & Running
+
+1. Install dependencies:
 ```bash
 pnpm install
 ```
 
-3. Start the development server:
-```bash
-pnpm dev
-```
-
-4. Open [http://localhost:3000](http://localhost:3000) in your browser
-
-### Usage Guide
-
-**First Time Setup**
-- The app will generate a unique guest session for you
-- Your session data persists across browser sessions
-- No registration required - start tracking immediately
-
-**Daily Activity Tracking**
-- Navigate to the activity logging section
-- Enter activity details including name and duration
-- Add optional notes for context
-- Activities are instantly saved and reflected in your analytics
-
-**Analytics & Insights**
-- View comprehensive statistics on your dashboard
-- Explore interactive charts showing trends over time
-- Filter data by different time ranges (weekly, monthly, yearly)
-
-**Data Management**
-- Export your complete activity history as JSON
-- Import previous backups to restore data
-- Edit existing activities to correct mistakes
-- Clear all data when needed with confirmation
-
-## Browser Support
-
-TrackDaily works on all modern browsers that support:
-- Chrome/Edge 90+
-- Firefox 88+
-- Safari 14+
-- Mobile browsers with localStorage and ES6+ support
-
-## Data Storage
-
-Your activity data is stored locally in your browser for privacy and instant access. Session information and activity logs are maintained across browser sessions, ensuring your tracking history is always available.
-
-## Development
-
-### Build for Production
-```bash
-pnpm build
-```
-
-### Start Production Server
-```bash
-pnpm start
-```
-
-### Lint Code
-```bash
-pnpm lint
-```
-
-### Type Check
+2. Run type check:
 ```bash
 pnpm typecheck
 ```
 
-### Bundle Analysis
+3. Start development server:
 ```bash
-pnpm analyze:bundle
+pnpm dev
 ```
 
-### Route Profiling
-- API responses include `Server-Timing` and `X-Route-Duration-Ms` headers for route-level timing.
-- Current instrumentation is enabled on `/api/user-info` (`GET` and `POST`).
+4. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## Contributing
+## API Endpoints
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+- `POST /api/auth/register` - Create account with validated name, email, and strong password
+- `POST /api/auth/login` - Authenticate with credentials and receive HttpOnly session cookie
+- `POST /api/auth/logout` - Invalidate session in database and clear session cookie
+- `GET  /api/auth/me` - Retrieve authenticated user profile (`id`, `name`, `email`)
+- `POST /api/activity-log` - Log activity (Protected via middleware & session)
+- `POST /api/activity-delete` - Delete activity (Protected via middleware & session)
+
+## Build & Production
+
+```bash
+pnpm build
+pnpm start
+```
 
 ## License
 
-This project is open source and available under the MIT License.
-
----
-
-Built with modern web technologies to provide a seamless activity tracking experience.
+MIT

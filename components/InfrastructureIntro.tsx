@@ -263,7 +263,7 @@ export default function InfrastructureIntro({ onComplete }: InfrastructureIntroP
               fontWeight: 300,
             }}
           >
-            TrackDaily
+            trakloop
           </motion.h1>
         </div>
         

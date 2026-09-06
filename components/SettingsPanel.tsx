@@ -13,13 +13,13 @@ import {
   Check,
   User,
   Shield,
-  Calendar,
   LogIn,
   Download,
   Upload,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { exportActivitiesToJson, importActivitiesFromJson } from '@/lib/activityUtils';
+import { OTPVerification } from '@/components/auth/OTPVerification';
 
 interface SettingsPanelProps {
   activities: Activity[];
@@ -31,8 +31,62 @@ interface SettingsPanelProps {
 export function SettingsPanel({ activities, onImportActivities, onLogout, onLoginClick }: SettingsPanelProps) {
   const [copied, setCopied] = useState(false);
   const [dataStatus, setDataStatus] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
+  const [regenerationStep, setRegenerationStep] = useState<'idle' | 'otp' | 'code'>('idle');
+  const [regenerationError, setRegenerationError] = useState<string | null>(null);
+  const [regenerationLoading, setRegenerationLoading] = useState(false);
+  const [regenerationDevOtp, setRegenerationDevOtp] = useState<string | undefined>();
+  const [newLoginCode, setNewLoginCode] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { session, logout, isLoading, isAuthenticated } = useAuth();
+  const { user, logout, isLoading, isAuthenticated } = useAuth();
+
+  const requestLoginCodeRegeneration = async () => {
+    if (!user?.phoneNumber) return;
+    setRegenerationError(null);
+    setRegenerationLoading(true);
+    try {
+      const response = await fetch('/api/auth/regenerate-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ step: 'send-otp', mobileNumber: user.phoneNumber }),
+      });
+      const result = await response.json() as { error?: string; devOtp?: string };
+      if (!response.ok) {
+        setRegenerationError(result.error ?? 'Unable to send verification code.');
+        return;
+      }
+      setRegenerationDevOtp(result.devOtp);
+      setRegenerationStep('otp');
+    } catch {
+      setRegenerationError('Unable to reach the server. Please try again.');
+    } finally {
+      setRegenerationLoading(false);
+    }
+  };
+
+  const confirmLoginCodeRegeneration = async (otp: string) => {
+    setRegenerationError(null);
+    setRegenerationLoading(true);
+    try {
+      const response = await fetch('/api/auth/regenerate-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ step: 'confirm-otp', otp }),
+      });
+      const result = await response.json() as { error?: string; loginCode?: string };
+      if (!response.ok || !result.loginCode) {
+        setRegenerationError(result.error ?? 'Unable to regenerate login code.');
+        return;
+      }
+      setNewLoginCode(result.loginCode);
+      setRegenerationStep('code');
+    } catch {
+      setRegenerationError('Unable to reach the server. Please try again.');
+    } finally {
+      setRegenerationLoading(false);
+    }
+  };
 
   const copyToClipboard = async (text: string) => {
     try {
@@ -52,14 +106,6 @@ export function SettingsPanel({ activities, onImportActivities, onLogout, onLogi
     }
   };
 
-  const formatDate = (timestamp: number) => {
-    return new Date(timestamp).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
-  };
-
   const handleExportData = () => {
     try {
       const json = exportActivitiesToJson(activities);
@@ -67,7 +113,7 @@ export function SettingsPanel({ activities, onImportActivities, onLogout, onLogi
       const downloadUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = downloadUrl;
-      link.download = `TrackDaily-activities-${new Date().toISOString().slice(0, 10)}.json`;
+      link.download = `trakloop-activities-${new Date().toISOString().slice(0, 10)}.json`;
       link.click();
       URL.revokeObjectURL(downloadUrl);
       setDataStatus({ kind: 'success', message: 'Activity data exported successfully.' });
@@ -254,15 +300,15 @@ export function SettingsPanel({ activities, onImportActivities, onLogout, onLogi
             <div className="bg-white/5 rounded-lg p-3 border border-white/10">
               <div className="flex items-center justify-between">
                 <div className="flex-1">
-                  <p className="text-xs text-white/50 mb-1">Session Code</p>
-                  <p className="text-lg font-mono font-bold text-white">{session?.code ?? ''}</p>
+                  <p className="text-xs text-white/50 mb-1">Account Email</p>
+                  <p className="text-lg font-mono font-bold text-white">{user?.email ?? ''}</p>
                 </div>
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => session?.code && copyToClipboard(session.code)}
+                  onClick={() => user?.email && copyToClipboard(user.email)}
                   className="text-white/50 hover:text-white hover:bg-white/10"
-                  disabled={!session?.code}
+                  disabled={!user?.email}
                 >
                   {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                 </Button>
@@ -271,10 +317,10 @@ export function SettingsPanel({ activities, onImportActivities, onLogout, onLogi
 
             <div className="bg-white/5 rounded-lg p-3 border border-white/10">
               <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-white/50" />
+                <User className="w-4 h-4 text-white/50" />
                 <div>
-                  <p className="text-xs text-white/50 mb-1">Session Created</p>
-                  <p className="text-sm text-white/80">{session ? formatDate(session.startDate) : ''}</p>
+                  <p className="text-xs text-white/50 mb-1">User Name</p>
+                  <p className="text-sm text-white/80">{user?.name ?? 'Athlete'}</p>
                 </div>
               </div>
             </div>
@@ -290,10 +336,71 @@ export function SettingsPanel({ activities, onImportActivities, onLogout, onLogi
         <div className="space-y-4">
           <h3 className="text-lg font-semibold text-white">Security</h3>
 
+          {user?.phoneNumber && (
+            <div className="space-y-3">
+              {regenerationStep === 'idle' && <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+                <div className="flex items-center gap-2 mb-2">
+                  <Shield className="w-4 h-4 text-yellow-400" />
+                  <p className="text-xs text-white/70 font-medium">Login Code</p>
+                </div>
+                <p className="text-xs text-white/60 mb-3">
+                  Your login code is used together with your mobile number to sign in securely. You can regenerate it anytime.
+                </p>
+                <p className="text-xs text-white/50">
+                  Phone: {user.phoneNumber}
+                </p>
+              </div>}
+
+              {regenerationStep === 'idle' && (
+                <Button
+                  className="w-full bg-yellow-600 hover:bg-yellow-700 text-white"
+                  disabled={isLoading || regenerationLoading}
+                  onClick={() => void requestLoginCodeRegeneration()}
+                >
+                  <Shield className="w-4 h-4 mr-2" />
+                  {regenerationLoading ? 'Sending verification code...' : 'Regenerate Login Code'}
+                </Button>
+              )}
+
+              {regenerationStep === 'otp' && (
+                <OTPVerification
+                  mobileNumber={user.phoneNumber}
+                  onVerified={confirmLoginCodeRegeneration}
+                  onResendClick={requestLoginCodeRegeneration}
+                  isLoading={regenerationLoading}
+                  error={regenerationError}
+                  clearError={() => setRegenerationError(null)}
+                  devOtp={regenerationDevOtp}
+                />
+              )}
+
+              {regenerationStep === 'code' && newLoginCode && (
+                <div className="space-y-3 rounded-lg border border-green-500/20 bg-green-500/10 p-4">
+                  <p className="text-sm text-green-200">Your new login code is ready. Save it somewhere secure.</p>
+                  <div className="flex items-center justify-between gap-3">
+                    <code className="text-2xl font-bold tracking-[0.3em] text-green-300">{newLoginCode}</code>
+                    <Button type="button" variant="ghost" size="icon" onClick={() => void copyToClipboard(newLoginCode)} aria-label="Copy new login code">
+                      {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                  <Button type="button" variant="outline" className="w-full" onClick={() => setRegenerationStep('idle')}>
+                    Done
+                  </Button>
+                </div>
+              )}
+
+              {regenerationError && regenerationStep !== 'otp' && (
+                <Alert className="border-red-500/20 bg-red-500/10 text-red-300">
+                  <AlertDescription>{regenerationError}</AlertDescription>
+                </Alert>
+              )}
+            </div>
+          )}
+
           <Alert className="bg-blue-500/10 border-blue-500/20 text-blue-400">
             <Shield className="h-4 w-4" />
             <AlertDescription>
-              Your session data is stored locally. Keep your session code private to protect your data.
+              Keep your login code and mobile number private to protect your account.
             </AlertDescription>
           </Alert>
 
@@ -308,7 +415,7 @@ export function SettingsPanel({ activities, onImportActivities, onLogout, onLogi
           </Button>
 
           <p className="text-xs text-white/50 text-center">
-            Logging out will clear all local data. You can log back in anytime with your session code.
+            Logging out will clear your session. You can log back in anytime with your mobile number and login code.
           </p>
         </div>
       </CardContent>

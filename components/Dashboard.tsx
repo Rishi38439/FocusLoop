@@ -6,13 +6,13 @@ import { Layout } from './Layout';
 import { Analytics } from './Analytics';
 import { ActivityHistory } from './ActivityHistory';
 import { ActivityForm } from './ActivityForm';
-import { SessionManager } from './SessionManager';
 import { SummaryCards } from './SummaryCards';
 import { ChartsPanel } from './ChartsPanel';
 import { ActivityTable } from './ActivityTable';
 import { ActivityInput } from './ActivityInput';
 import { DurationTrend } from './DurationTrend';
 import { SettingsPanel } from './SettingsPanel';
+import { SessionManager } from './SessionManager';
 import { LoginForm } from './auth/LoginForm';
 import { RegisterForm } from './auth/RegisterForm';
 import { useAuth } from '@/hooks/useAuth';
@@ -42,7 +42,7 @@ export function Dashboard({
   onUpdateActivity,
   onReplaceActivities,
 }: DashboardProps) {
-  const { session, isAuthenticated } = useAuth();
+  const { user } = useAuth();
   // Wrapper function to convert duration-only update to Partial<Activity>
   const handleUpdateActivityDuration = (id: string, duration: number) => {
     onUpdateActivity(id, { duration });
@@ -103,8 +103,7 @@ export function Dashboard({
     }
   };
 
-  // Prefer authenticated session code if available
-  const displaySessionCode = isAuthenticated && session?.code ? session.code : sessionCode;
+  const displaySessionCode = user?.email ?? sessionCode;
 
   return (
     <>
