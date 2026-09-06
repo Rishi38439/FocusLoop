@@ -3,20 +3,22 @@
 import { useState } from 'react';
 import { Activity } from '@/types/activity';
 import { Layout } from './Layout';
-import { Analytics } from './Analytics';
-import { ActivityHistory } from './ActivityHistory';
+import dynamic from 'next/dynamic';
 import { ActivityForm } from './ActivityForm';
 import { SummaryCards } from './SummaryCards';
-import { ChartsPanel } from './ChartsPanel';
 import { ActivityTable } from './ActivityTable';
 import { ActivityInput } from './ActivityInput';
-import { DurationTrend } from './DurationTrend';
 import { SettingsPanel } from './SettingsPanel';
 import { SessionManager } from './SessionManager';
 import { LoginForm } from './auth/LoginForm';
 import { RegisterForm } from './auth/RegisterForm';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
+
+const Analytics = dynamic(() => import('./Analytics').then((module) => module.Analytics));
+const ActivityHistory = dynamic(() => import('./ActivityHistory').then((module) => module.ActivityHistory));
+const ChartsPanel = dynamic(() => import('./ChartsPanel').then((module) => module.ChartsPanel));
+const DurationTrend = dynamic(() => import('./DurationTrend').then((module) => module.DurationTrend));
 
 type ViewType = 'dashboard' | 'log-activity' | 'analytics' | 'history' | 'settings';
 

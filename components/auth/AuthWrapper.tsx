@@ -1,19 +1,22 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
-import { Dashboard } from '@/components/Dashboard';
 import InfrastructureIntro from '@/components/InfrastructureIntro';
 import LiveGridPulseNetwork from '@/components/LiveGridPulseNetwork';
-import { LoginForm } from '@/components/auth/LoginForm';
-import { RegisterForm } from '@/components/auth/RegisterForm';
-import { useActivityTracker } from '@/hooks/useActivityTracker';
 import { useAuth } from '@/hooks/useAuth';
+
+const AuthenticatedDashboard = dynamic(
+  () => import('@/components/AuthenticatedDashboard'),
+  { loading: () => <div className="min-h-screen bg-background" /> },
+);
+const LoginForm = dynamic(() => import('@/components/auth/LoginForm').then((module) => module.LoginForm));
+const RegisterForm = dynamic(() => import('@/components/auth/RegisterForm').then((module) => module.RegisterForm));
 
 export function AuthWrapper() {
   const [showIntro, setShowIntro] = useState(true);
   const [showRegistration, setShowRegistration] = useState(false);
   const { isAuthenticated, isLoading, refreshSession } = useAuth();
-  const tracker = useActivityTracker();
 
   useEffect(() => {
     if (sessionStorage.getItem('trakloop_intro_seen') || sessionStorage.getItem('trackdaily_intro_seen')) {
@@ -39,20 +42,7 @@ export function AuthWrapper() {
   }
 
   if (isAuthenticated) {
-    return (
-      <div className="min-h-screen relative bg-background text-foreground">
-        <LiveGridPulseNetwork />
-        <Dashboard
-          activities={tracker.activities}
-          sessionId={tracker.sessionId}
-          sessionCode={tracker.sessionCode}
-          onAddActivity={tracker.addActivity}
-          onDeleteActivity={tracker.deleteActivity}
-          onUpdateActivity={tracker.updateActivity}
-          onReplaceActivities={tracker.replaceActivities}
-        />
-      </div>
-    );
+    return <AuthenticatedDashboard />;
   }
 
   return (
